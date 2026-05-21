@@ -29,6 +29,12 @@ from .utils import get_env_name, DoesNotExist, InvalidAction
 CUR_PATH = os.path.dirname(os.path.abspath(__file__))
 DOCS_PATH = os.path.join(CUR_PATH, 'docs')
 
+
+def _safe_next(next_url, fallback):
+    if next_url and next_url.startswith('/') and not next_url.startswith('//'):
+        return next_url
+    return fallback
+
 _MW_BASE = 'https://meta.wikimedia.org/w'
 _MW_OAUTH2_AUTHORIZE = _MW_BASE + '/rest.php/oauth2/authorize'
 _MW_OAUTH2_TOKEN = _MW_BASE + '/rest.php/oauth2/access_token'
@@ -166,7 +172,7 @@ def login(request, oauth_config, cookie, root_path):
 
     cookie['oauth_state'] = state
     cookie['oauth_code_verifier'] = code_verifier
-    cookie['return_to_url'] = request.args.get('next', root_path)
+    cookie['return_to_url'] = _safe_next(request.args.get('next'), root_path)
 
     params = urlencode({
         'response_type': 'code',
@@ -188,7 +194,7 @@ def logout(request: Any, cookie: dict[str, Any], root_path: str) -> Response:
     if env_name == 'dev':
         return redirect('http://localhost:5173')
 
-    return_to_url = request.args.get('next', root_path)
+    return_to_url = _safe_next(request.args.get('next'), root_path)
     return redirect(return_to_url)
 
 
@@ -254,7 +260,7 @@ def complete_login(request, oauth_config, cookie, rdb_session, root_path, api_lo
     cookie['userid'] = identity['sub']
     cookie['username'] = identity['username']
 
-    return_to_url = cookie.get('return_to_url', root_path)
+    return_to_url = _safe_next(cookie.get('return_to_url'), root_path)
     for key in ('oauth_state', 'oauth_code_verifier', 'return_to_url'):
         cookie.pop(key, None)
 
