@@ -5,6 +5,7 @@ from __future__ import annotations
 import os
 import base64
 import hashlib
+import hmac
 import datetime
 import secrets
 import json
@@ -208,7 +209,7 @@ def complete_login(request, oauth_config, cookie, rdb_session, root_path, api_lo
     else:
         state = request.args.get('state', '')
         with api_log.debug('verify_oauth_state') as act:
-            if not state or state != cookie.get('oauth_state'):
+            if not state or not hmac.compare_digest(state, cookie.get('oauth_state', '')):
                 act.failure('state mismatch, clearing cookie and redirecting to {}', root_path)
                 cookie.set_expires()
                 return redirect(root_path)
