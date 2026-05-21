@@ -194,13 +194,11 @@ def logout(request: Any, cookie: dict[str, Any], root_path: str) -> Response:
 
 @public
 def complete_login(request, oauth_config, cookie, rdb_session, root_path, api_log, config):
-    # Standardised debug impersonation: only allowed in dev and if explicitly enabled
-    is_dev = env_name == 'dev'
-    allow_impersonation = config.get('allow_impersonation', False)
-
-    if is_dev and allow_impersonation:
-        identity = {'sub': 6024474,
-                    'username': 'Slaporte'}
+    if config.get('debug'):
+        identity = {
+            'sub': config.get('debug_userid', 0),
+            'username': config.get('debug_username', '__montage_debug__'),
+        }
     else:
         state = request.args.get('state', '')
         with api_log.debug('verify_oauth_state') as act:
