@@ -172,9 +172,37 @@ confirm the built image uses port 8000, then restart.
 
 #### Viewing logs
 
+Montage writes several log files to NFS (`/data/project/<project>/`). These are only
+available because the service is started with `--mount all`; the files persist across restarts.
+
+| Log file | Set via | What it captures |
+|----------|---------|-----------------|
+| `montage_api.log` | `MONTAGE_API_LOG_PATH` | Every API request — method, path, user, timing, result |
+| `montage_api.exc.log` | _(derived — same path with `.exc` suffix)_ | Full tracebacks for 5xx errors |
+| `montage_replay.log` | `MONTAGE_REPLAY_LOG_PATH` | Raw request replay data (optional; used for debugging) |
+| `montage_feel.log` | `MONTAGE_FEEL_LOG_PATH` | Juror experience events (optional) |
+
+Tail the API log (most useful starting point):
+
 ```bash
 tail -50 /data/project/<project>/montage_api.log
 ```
+
+For 5xx tracebacks:
+
+```bash
+tail -50 /data/project/<project>/montage_api.exc.log
+```
+
+**Gunicorn / pod stdout** (replaces the old `uwsgi.log`): gunicorn writes its own startup
+messages and unhandled errors to stdout, which Kubernetes captures. To view it:
+
+```bash
+toolforge webservice buildservice logs
+```
+
+This is ephemeral — it reflects the current pod's output since the last restart and is not
+written to a file.
 
 #### Running Python commands
 
