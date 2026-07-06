@@ -17,7 +17,7 @@ The **Montage Project** is a web application with two main components:
    - Built with **Clastic**, a Python framework.
    - Uses various Python libraries such as:
      - **SQLAlchemy**: Database interactions.
-     - **mwoauth**: Used for authentication with MediaWiki's OAuth.
+     - **OAuth 2.0 (PKCE)**: Authentication with MediaWiki via the OAuth 2.0 flow.
      - **pymysql**: MySQL driver.
    - Serves the frontend and exposes API endpoints for application functionality.
 
@@ -201,10 +201,7 @@ npm run build
 ├── MANIFEST.in
 ├── Makefile
 ├── PROJECT_LOG.md
-├── config
-│   ├── beta-uwsgi.ini
-│   ├── dev-uwsgi.ini
-│   └── prod-uwsgi.ini
+├── Procfile
 ├── config.default.yaml
 ├── deployment.md
 ├── design.md
