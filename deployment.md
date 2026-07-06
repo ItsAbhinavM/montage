@@ -6,9 +6,9 @@ Instructions for deploying Montage on Toolforge using the buildservice.
 
 ## Fresh install
 
-#### 1. Register OAuth credentials
+#### 1. Register OAuth 2.0 credentials
 
-[Register your app](https://meta.wikimedia.org/wiki/Special:OAuthConsumerRegistration/propose) on Meta-Wiki. Save the consumer token and secret token — you will need them in step 3.
+[Register an OAuth 2.0 client](https://meta.wikimedia.org/wiki/Special:OAuthConsumerRegistration/propose) on Meta-Wiki: choose **OAuth 2.0**, set the **callback (redirect) URI** to `https://<tool>.toolforge.org/complete_login` (e.g. `https://montage-beta.toolforge.org/complete_login`), and grant the **basic** scope. Save the **client ID** and **client secret** — you will need them in step 3. Each tool account needs its own client, because the callback URI differs per environment.
 
 #### 2. SSH into the tool account
 
@@ -103,9 +103,12 @@ storage must be mounted.
 
 #### 8. Verify
 
-Visit `/meta` to confirm the service is running. Example: https://montage-beta.toolforge.org/meta/
+Confirm the service is running:
 
-The response should show a recent restart time. Add your Wikimedia username to `MONTAGE_SUPERUSERS` if you need admin access.
+- `https://<tool>.toolforge.org/meta/` — should show a recent start time.
+- `https://<tool>.toolforge.org/v1/health` — should report `db: ok`, `status: healthy` (verifies database connectivity, not just that the app booted).
+
+Add your Wikimedia username to `MONTAGE_SUPERUSERS` if you need admin access.
 
 ---
 
@@ -150,6 +153,31 @@ restart the service, and smoke-test `/meta/`.
 
 ---
 
+## Switching an existing legacy webservice to the buildservice
+
+If a tool is still running the old `python3.11`/`python3.13` NFS webservice — check with
+`toolforge webservice status` — the deploy script cannot be used yet: it issues a `restart`,
+which only applies to an already-running buildservice. Do the one-time switch manually:
+
+```bash
+whoami                                   # MUST be tools.<intended-tool> before any mutating command
+
+# Ensure env vars are set (Fresh install step 3) and the image is built (Fresh install step 5),
+# then swap the webservice type:
+toolforge webservice stop
+toolforge webservice buildservice start --mount all
+```
+
+`--mount all` is required; starting without it fails with
+`ERROR: --mount not explicitly specified on a build service based tool`.
+
+The legacy webservice reads its config from a YAML file on NFS, whereas the buildservice reads it
+from `toolforge envvars`. A tool that worked on the legacy service can therefore still fail on the
+buildservice if the `MONTAGE_*` env vars (Fresh install step 3) are not set — and its database may
+need migrating (see "Startup crash: missing column" below).
+
+---
+
 ## Debugging
 
 #### Confirming which commit was built
@@ -169,6 +197,27 @@ trigger a new build before restarting.
 This means the pod never passed the Toolforge startup probe, which checks port 8000. Most
 common cause: the running image binds to the wrong port. Use the build log check above to
 confirm the built image uses port 8000, then restart.
+
+#### Startup crash: `missing column ... from database`
+
+If the pod logs (`toolforge webservice buildservice logs`) show:
+
+```
+!!  Model <class 'montage.rdb.Entry'> missing column file_id from database ...
+!!  recreate the database and update the code, then try again
+```
+
+the database schema is behind the code (common when a tool has been off the buildservice for a
+while). Run the migration — do **not** "recreate the database", which would wipe existing data:
+
+```bash
+mariadb --defaults-file=~/replica.my.cnf -h tools.db.svc.wikimedia.cloud <db name> < tools/migrate_prod_db.sql
+toolforge webservice buildservice restart --mount all
+```
+
+`tools/create_schema.py` only creates *missing tables* (`CREATE TABLE IF NOT EXISTS`); it does
+**not** `ALTER` existing tables, so it will not add a missing column. Use the migration SQL for
+schema changes to an existing database.
 
 #### Viewing logs
 
