@@ -1,6 +1,12 @@
-# Montage Deployment
+# Montage Deployment (Wikimedia Toolforge)
 
-Instructions for deploying Montage on Toolforge using the buildservice.
+This guide is **specific to the Wikimedia Toolforge environment**: it assumes the Toolforge
+Kubernetes buildservice, the `toolforge` CLI, Toolforge tool accounts, and Toolforge-managed
+NFS and databases. Every step and prerequisite below is Toolforge-specific — deploying Montage
+on a generic or self-hosted server is out of scope here.
+
+<!-- TODO (later): separate the prerequisites into "Wikimedia Toolforge-specific" vs
+     "any server" once a non-Toolforge deployment path is documented. -->
 
 ---
 
