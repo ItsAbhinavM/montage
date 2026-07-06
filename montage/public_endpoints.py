@@ -201,7 +201,13 @@ def logout(request: Any, cookie: dict[str, Any], root_path: str) -> Response:
 
 @public
 def complete_login(request, oauth_config, cookie, rdb_session, root_path, api_log, config):
-    if config.get('debug'):
+    # Debug impersonation is gated on env_name == 'dev' so that a stray
+    # MONTAGE_DEBUG in a misconfigured prod/beta pod cannot bypass OAuth.
+    # Full hardening (fail-safe env default, dedicated allow_impersonation
+    # flag, fake seeded dev user, unifying the mw auto-login path) is tracked
+    # as a security follow-up.
+    is_dev = env_name == 'dev'
+    if is_dev and config.get('debug'):
         identity = {
             'sub': config.get('debug_userid', 0),
             'username': config.get('debug_username', '__montage_debug__'),
