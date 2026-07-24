@@ -54,6 +54,16 @@
         >
           {{ $t('montage-filter-disqualified') }} ({{ disqualifiedEntries.length }})
         </cdx-button>
+        <cdx-text-input
+          v-model="searchQuery"
+          class="disqualify-search"
+          :placeholder="$t('montage-search-placeholder')"
+          clearable
+        >
+          <template #start-icon>
+            <magnify-icon class="icon-small" />
+          </template>
+        </cdx-text-input>
       </div>
 
       <DisqualifyPanel
@@ -78,10 +88,10 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
-import { CdxButton } from '@wikimedia/codex'
+import { CdxButton, CdxTextInput } from '@wikimedia/codex'
 import adminService from '@/services/adminService'
 import alertService from '@/services/alertService'
 import dialogService from '@/services/dialogService'
@@ -92,6 +102,7 @@ import ArrowLeft from 'vue-material-design-icons/ArrowLeft.vue'
 import ChevronLeft from 'vue-material-design-icons/ChevronLeft.vue'
 import ChevronRight from 'vue-material-design-icons/ChevronRight.vue'
 import AlertIcon from 'vue-material-design-icons/Alert.vue'
+import MagnifyIcon from 'vue-material-design-icons/Magnify.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -103,6 +114,11 @@ const allEntries = ref([])
 const currentFilter = ref('all')
 const currentPage = ref(1)
 const entriesPerPage = 50
+const searchQuery = ref('')
+
+watch(searchQuery, () => {
+  currentPage.value = 1
+})
 
 const disqualifiedEntries = computed(() => {
   return allEntries.value.filter((entry) => entry.dq_user_id)
@@ -111,13 +127,26 @@ const qualifiedEntries = computed(() => {
   return allEntries.value.filter((entry) => !entry.dq_user_id)
 })
 const filteredEntries = computed(() => {
+  let entries
   if (currentFilter.value === 'qualified') {
-    return qualifiedEntries.value
+    entries = qualifiedEntries.value
   } else if (currentFilter.value === 'disqualified') {
-    return disqualifiedEntries.value
+    entries = disqualifiedEntries.value
+  } else {
+    entries = allEntries.value
   }
-  return allEntries.value
+  const query = searchQuery.value.trim().toLowerCase()
+  if (query) {
+    entries = entries.filter((entry) => {
+      return (
+        entry.name?.toLowerCase().includes(query) ||
+        entry.upload_user_text?.toLowerCase().includes(query)
+      )
+    })
+  }
+  return entries
 })
+
 const totalPages = computed(() => {
   return Math.ceil(filteredEntries.value.length / entriesPerPage)
 })
@@ -311,5 +340,9 @@ onMounted(() => {
 }
 .disqualify-warning p {
   margin: 0;
+}
+.disqualify-search {
+  margin-left: auto;
+  min-width: 240px;
 }
 </style>
