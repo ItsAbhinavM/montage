@@ -209,5 +209,8 @@
   "montage-disqualify-loading": "Loading entries...",
   "montage-disqualify-reason-label": "Disqualified: {0}",
   "montage-disqualify-readonly-warning": "This round is currently in read-only mode. To disqualify or requalify entries, the round must be paused. Current status:",
-  "montage-search-placeholder": "Enter Image Name"
+  "montage-search-placeholder": "Enter Image Name",
+  "montage-required-threshold": "Please select a threshold before continuing",
+  "unsaved-changes-confirmation": "There are unsaved changes. Are you sure you want to leave?",
+  "back-to-round": "Back to round"
 }
