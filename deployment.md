@@ -38,7 +38,7 @@ toolforge envvars create MONTAGE_OAUTH_CLIENT_SECRET  # OAuth 2.0 client secret
 toolforge envvars create MONTAGE_OAUTH_REDIRECT_URI   # e.g. https://montage-beta.toolforge.org/complete_login
 toolforge envvars create MONTAGE_COOKIE_SECRET  # generate with: openssl rand -hex 32
 toolforge envvars create MONTAGE_DB_URL         # mysql+pymysql://<user>:<pass>@tools.db.svc.wikimedia.cloud/<db>?charset=utf8mb4
-toolforge envvars create MONTAGE_SUPERUSERS     # comma-separated Wikimedia usernames, e.g. YourUsername
+toolforge envvars create MONTAGE_SUPERUSERS     # OPTIONAL — enables su-impersonation only, NOT admin access (see "Maintainer vs superuser" below)
 toolforge envvars create MONTAGE_API_LOG_PATH   # e.g. /data/project/montage-beta/montage_api.log
 toolforge envvars create MONTAGE_REPLAY_LOG_PATH
 ```
@@ -88,9 +88,17 @@ Run inside the buildservice shell (uses the same image as the webservice):
 
 ```bash
 toolforge webservice buildservice shell
+export USER=montage          # required — see note
 launcher python tools/create_schema.py
 exit
 ```
+
+> **Why `export USER=montage`:** the buildservice **shell** does not run the app entrypoint, so
+> `USER` is unset and the container has no passwd entry. `pymysql` calls `getpass.getuser()` at
+> import time and raises `OSError: No username set in the environment`, which aborts any script
+> that imports `montage.rdb`/`labs`. The running webservice avoids this because `app.py` does
+> `os.environ.setdefault('USER', …)` before importing pymysql — but that only runs via the
+> Procfile (`gunicorn app:app`), not in an interactive shell. Set `USER` manually there.
 
 If upgrading an existing deployment, run the migration SQL instead (on the bastion):
 
@@ -114,7 +122,20 @@ Confirm the service is running:
 - `https://<tool>.toolforge.org/meta/` — should show a recent start time.
 - `https://<tool>.toolforge.org/v1/health` — should report `db: ok`, `status: healthy` (verifies database connectivity, not just that the app booted).
 
-Add your Wikimedia username to `MONTAGE_SUPERUSERS` if you need admin access.
+#### Maintainer vs superuser (important)
+
+**Maintainer (admin) access is hardcoded in code, not configured.** The `MAINTAINERS` list in
+`montage/rdb.py` is the source of truth for who is an admin (`User.is_maintainer` checks
+membership in it). It is identical on every deployment (dev/beta/prod) and is **not** read from
+config or env vars. To grant or revoke maintainer access you must edit that list in `rdb.py` and
+redeploy — setting `MONTAGE_SUPERUSERS` does **not** do it. `ensure_series()` also indexes
+`MAINTAINERS[0]`, so the list must never be empty.
+
+**`MONTAGE_SUPERUSERS` is a separate, optional feature.** It enables *impersonation*: a listed
+user may pass `su_to=<username>` to act as another user (for support/debugging), gated on a valid
+signed cookie (`montage/mw/__init__.py`). Legacy YAML config called this `superuser` (singular);
+the env var is `MONTAGE_SUPERUSERS` (comma-separated). Leave it unset to disable impersonation
+entirely — it has no effect on who is an admin.
 
 ---
 
@@ -122,8 +143,22 @@ Add your Wikimedia username to `MONTAGE_SUPERUSERS` if you need admin access.
 
 #### 1. Check for active usage
 
-Check the audit log to confirm the instance is not in active use before deploying:
+Before a deploy that restarts or stops the service, confirm nobody is mid-vote.
+
+The audit log records **admin** actions (round activate/finalize) but **not** juror voting:
 https://montage-beta.toolforge.org/v1/logs/audit
+
+For juror voting, query the database directly (works on any deploy model). Get the `<db name>`
+from `config.<env>.yaml` (`db_url`) or `toolforge envvars`, then:
+
+```bash
+mariadb --defaults-file=~/replica.my.cnf -h tools.db.svc.wikimedia.cloud <db name> -e "SELECT UTC_TIMESTAMP() AS now_utc, (SELECT COUNT(*) FROM votes WHERE modified_date >= UTC_TIMESTAMP() - INTERVAL 15 MINUTE) AS votes_15m, (SELECT MAX(modified_date) FROM votes) AS last_vote_utc, (SELECT COUNT(*) FROM rounds WHERE status='active') AS active_rounds\\G"
+```
+
+`votes.modified_date` is stored in UTC and stamped when a juror casts or edits a vote. If
+`active_rounds` is `0`, nothing is open for voting; if `votes_15m` is `0` and `last_vote_utc`
+is well in the past, it is safe to restart. A juror mid-round loses no data — each vote is
+committed on submission — they simply resume once the service is back.
 
 #### 2. SSH into the tool account
 
@@ -230,6 +265,12 @@ schema changes to an existing database.
 Montage writes several log files to NFS (`/data/project/<project>/`). These are only
 available because the service is started with `--mount all`; the files persist across restarts.
 
+**Legacy (pre-buildservice) request log:** the old uWSGI webservice logs *every* request —
+method, path, status, timing — to `/data/project/<project>/uwsgi.log` (e.g.
+`/data/project/montage/uwsgi.log`). Health-check pings show up as frequent identical `GET /`
+lines; ignore those and `robots.txt` when gauging real activity. Under the buildservice this is
+replaced by `montage_api.log` (below) plus gunicorn stdout via `toolforge webservice buildservice logs`.
+
 | Log file | Set via | What it captures |
 |----------|---------|-----------------|
 | `montage_api.log` | `MONTAGE_API_LOG_PATH` | Every API request — method, path, user, timing, result |
@@ -261,11 +302,15 @@ written to a file.
 
 #### Running Python commands
 
-Use the buildservice shell — prefix Python with `launcher`:
+Use the buildservice shell — prefix Python with `launcher`. Set `USER` first (the shell skips
+the app entrypoint that normally sets it — see the note under "Initialise the database schema"),
+and import the top-level `app` module (which sets `USER` and builds the real WSGI app) rather than
+`montage.app` directly:
 
 ```bash
 toolforge webservice buildservice shell
-launcher python -c "import montage.app"
+export USER=montage
+launcher python -c "import app; print('app build OK')"   # exercises full startup: config, cookie guard, OAuth
 launcher python tools/create_schema.py
 exit
 ```
